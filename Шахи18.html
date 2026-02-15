@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chess Neon Elite</title>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <style>
+        :root { --neon: #00f2ff; --red: #ff4757; --cell: 45px; --gold: #ffd700; }
+        body { margin: 0; background: #0a0a0c; color: white; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+        
+        #menu, #guide { position: absolute; inset: 0; background: #0a0a0c; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+        #guide { display: none; overflow-y: auto; align-items: flex-start; text-align: left; }
+        .panel { background: #1c1c21; padding: 25px; border-radius: 20px; border: 2px solid #333; width: 300px; text-align: center; }
+        
+        .btn { background: var(--neon); border: none; color: #000; padding: 14px; margin: 8px 0; border-radius: 12px; width: 100%; font-weight: bold; cursor: pointer; font-size: 15px; }
+        .btn-secondary { background: #333; color: white; }
+        input { background: #000; border: 1px solid #444; padding: 12px; width: calc(100% - 26px); border-radius: 10px; color: white; text-align: center; margin-bottom: 10px; }
+
+        #game { display: none; flex-direction: column; align-items: center; }
+        #status { margin-bottom: 15px; font-weight: bold; font-size: 18px; color: var(--neon); text-align: center; }
+        
+        #board { display: grid; grid-template-columns: repeat(8, var(--cell)); grid-template-rows: repeat(8, var(--cell)); border: 5px solid #333; }
+        .cell { width: var(--cell); height: var(--cell); display: flex; align-items: center; justify-content: center; font-size: 32px; cursor: pointer; position: relative; }
+        .white-cell { background: #333; }
+        .black-cell { background: #1a1a1a; }
+        
+        .cell.selected { background: rgba(0, 242, 255, 0.4) !important; }
+        .cell.target::after { content: ''; width: 12px; height: 12px; background: var(--neon); border-radius: 50%; position: absolute; }
+        .cell.capture::after { content: ''; width: 35px; height: 35px; border: 2px solid var(--red); border-radius: 50%; position: absolute; opacity: 0.5; }
+        .cell.check { background: radial-gradient(circle, var(--red) 0%, transparent 70%) !important; }
+
+        .piece { z-index: 2; user-select: none; }
+        .w { color: white; text-shadow: 0 0 8px #fff; }
+        .b { color: var(--red); text-shadow: 0 0 8px var(--red); }
+        
+        .flipped { transform: rotate(180deg); }
+        .flipped .piece { transform: rotate(180deg); }
+
+        /* Стилі для навчання */
+        .guide-box { background: #1c1c21; padding: 20px; border-radius: 15px; width: 100%; max-width: 500px; border: 1px solid #333; }
+        h3 { color: var(--neon); margin-top: 20px; border-bottom: 1px solid #333; }
+        ul { padding-left: 20px; font-size: 14px; line-height: 1.6; }
+    </style>
+</head>
+<body>
+
+<div id="menu">
+    <div class="panel">
+        <h1 style="color:var(--neon)">NEON CHESS</h1>
+        <button class="btn" onclick="start('bot')">ПРОТИ БОТА</button>
+        <button class="btn" onclick="start('local')">ВДВОХ (ОФЛАЙН)</button>
+        <button class="btn btn-secondary" onclick="toggleGuide(true)">📖 НАВЧАННЯ</button>
+        <hr style="opacity:0.1; margin: 15px 0">
+        <button class="btn" style="background:#1e90ff; color:white" onclick="start('create')">СТВОРИТИ КІМНАТУ</button>
+        <input type="number" id="roomCode" placeholder="КОД">
+        <button class="btn" style="background:#5352ed; color:white" onclick="start('join')">ПРИЄДНАТИСЯ</button>
+    </div>
+</div>
+
+<div id="guide">
+    <div class="guide-box">
+        <button class="btn" onclick="toggleGuide(false)">🔙 НАЗАД ДО МЕНЮ</button>
+        <h2>Правила гри</h2>
+        
+        <h3>1. Мета гри</h3>
+        <p>Поставити <b>Мат</b> королю суперника.</p>
+
+        <h3>2. Шах, Мат і Пат</h3>
+        <ul>
+            <li><b>Шах:</b> Король під атакою. Ви зобов'язані захистити його (відійти, закритися або збити нападаючу фігуру).</li>
+            <li><b>Мат:</b> Король під атакою і порятунку немає. Це перемога!</li>
+            <li><b>Пат:</b> У гравця немає ходів, але король НЕ під атакою. Це нічия.</li>
+        </ul>
+
+        <h3>3. Фігури</h3>
+        <ul>
+            <li><b>Пішак:</b> Вперед на 1 (або на 2 при першому ході). Б'є по діагоналі.</li>
+            <li><b>Кінь:</b> Буквою "Г", може перестрибувати інші фігури.</li>
+            <li><b>Тура:</b> Прямо по лініях.</li>
+            <li><b>Слон:</b> Тільки по діагоналі.</li>
+            <li><b>Ферзь:</b> У будь-якому напрямку (найсильніша).</li>
+            <li><b>Король:</b> На 1 клітинку навколо себе.</li>
+        </ul>
+
+        <h3>4. Особливі ходи</h3>
+        <ul>
+            <li><b>Рокіровка:</b> Король і тура рухаються назустріч одночасно (якщо вони ще не ходили і шлях вільний).</li>
+            <li><b>Перетворення пішака:</b> Дійшовши до кінця дошки, пішак стає Ферзем.</li>
+        </ul>
+    </div>
+</div>
+
+<div id="game">
+    <div id="status"></div>
+    <div id="board"></div>
+    <div id="room-display" style="margin-top:10px; color:#555"></div>
+    <button class="btn btn-secondary" style="margin-top:20px; width: 100px" onclick="location.reload()">МЕНЮ</button>
+</div>
+
+<script>
+    // Налаштування Firebase (твої оригінальні)
+    const firebaseConfig = {
+        apiKey: "AIzaSyBTL6BV1GdauZ-6M5fK9USB-cq4Ut9cA0U",
+        authDomain: "tictactoe-5bd62.firebaseapp.com",
+        databaseURL: "https://tictactoe-5bd62-default-rtdb.firebaseio.com",
+        projectId: "tictactoe-5bd62",
+        storageBucket: "tictactoe-5bd62.firebasestorage.app",
+        messagingSenderId: "934857521432",
+        appId: "1:934857521432:web:cef29a6492be5cc578866d"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let state = { id: '', board: [], turn: 'white', role: '', active: false, mode: '', gameOver: false };
+    let selectedIdx = null;
+    let legalMoves = [];
+    const icons = {'P':'♟','p':'♟','R':'♜','r':'♜','N':'♞','n':'♞','B':'♝','b':'♝','Q':'♛','q':'♛','K':'♚','k':'♚'};
+
+    function toggleGuide(show) { document.getElementById('guide').style.display = show ? 'flex' : 'none'; }
+
+    async function start(mode) {
+        state.mode = mode;
+        const initial = ['r','n','b','q','k','b','n','r','p','p','p','p','p','p','p','p','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','.','P','P','P','P','P','P','P','P','R','N','B','Q','K','B','N','R'];
+        if (mode === 'local' || mode === 'bot') {
+            state.id = 'local'; state.role = 'white'; state.active = true; state.board = initial; render();
+        } else if (mode === 'create') {
+            const code = Math.floor(1000 + Math.random() * 9000);
+            state.id = 'room_' + code; state.role = 'white';
+            document.getElementById('room-display').innerText = "КІМНАТА: " + code;
+            await db.ref('chess/' + state.id).set({ board: initial, turn: 'white', active: false });
+            listen();
+        } else {
+            const code = document.getElementById('roomCode').value;
+            state.id = 'room_' + code; state.role = 'black';
+            await db.ref('chess/' + state.id).update({ active: true });
+            listen();
+        }
+        document.getElementById('menu').style.display = 'none';
+        document.getElementById('game').style.display = 'flex';
+    }
+
+    function listen() {
+        db.ref('chess/' + state.id).on('value', snap => {
+            const d = snap.val();
+            if (d) { state.board = d.board; state.turn = d.turn; state.active = d.active; render(); }
+        });
+    }
+
+    function render() {
+        const boardEl = document.getElementById('board');
+        boardEl.innerHTML = '';
+        if (state.role === 'black') boardEl.classList.add('flipped');
+        
+        const statusEl = document.getElementById('status');
+        const inCheck = isKingInCheck(state.board, state.turn);
+        const noMoves = getAllLegalMoves(state.board, state.turn).length === 0;
+
+        if (noMoves) {
+            state.gameOver = true;
+            statusEl.innerHTML = inCheck ? "<span style='color:red'>МАТ! ПЕРЕМОГА " + (state.turn === 'white' ? "ЧОРНИХ" : "БІЛИХ") + "</span>" : "ПАТ! НІЧИЯ";
+        } else {
+            statusEl.innerText = inCheck ? "⚠️ ШАХ " + (state.turn === 'white' ? "БІЛИМ" : "ЧОРНИМ") : "ХІД " + (state.turn === 'white' ? "БІЛИХ" : "ЧОРНИХ");
+        }
+
+        state.board.forEach((p, i) => {
+            const cell = document.createElement('div');
+            const r = Math.floor(i / 8), c = i % 8;
+            cell.className = `cell ${(r + c) % 2 === 0 ? 'white-cell' : 'black-cell'}`;
+            if (selectedIdx === i) cell.classList.add('selected');
+            if (legalMoves.includes(i)) cell.classList.add(state.board[i] !== '.' ? 'capture' : 'target');
+            if (p !== '.' && p.toLowerCase() === 'k' && isKingInCheck(state.board, p === p.toUpperCase() ? 'white' : 'black')) cell.classList.add('check');
+
+            if (p !== '.') {
+                const pEl = document.createElement('div');
+                pEl.className = `piece ${p === p.toUpperCase() ? 'w' : 'b'}`;
+                pEl.innerText = icons[p];
+                cell.appendChild(pEl);
+            }
+            cell.onclick = () => handleCellClick(i);
+            boardEl.appendChild(cell);
+        });
+
+        if (state.turn === 'black' && state.mode === 'bot' && !state.gameOver) setTimeout(botMove, 600);
+    }
+
+    // --- ЛОГІКА ТА ПРАВИЛА ---
+    function getPseudoMoves(board, idx) {
+        const moves = []; const p = board[idx]; const type = p.toLowerCase();
+        const isW = p === p.toUpperCase(); const r = Math.floor(idx / 8), c = idx % 8;
+        if (type === 'p') {
+            let d = isW ? -1 : 1;
+            if (board[idx + d * 8] === '.') {
+                moves.push(idx + d * 8);
+                if ((isW && r === 6 && board[idx + d * 16] === '.') || (!isW && r === 1 && board[idx + d * 16] === '.')) moves.push(idx + d * 16);
+            }
+            [c - 1, c + 1].forEach(nc => {
+                if (nc >= 0 && nc < 8) {
+                    let ti = (r + d) * 8 + nc;
+                    if (board[ti] && board[ti] !== '.' && isW !== (board[ti] === board[ti].toUpperCase())) moves.push(ti);
+                }
+            });
+        } else {
+            const ds = {'r':[[0,1],[0,-1],[1,0],[-1,0]],'b':[[1,1],[1,-1],[-1,1],[-1,-1]],'n':[[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]],'q':[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]],'k':[[0,1],[0,-1],[1,0],[-1,0],[1,1],[1,-1],[-1,1],[-1,-1]]};
+            ds[type]?.forEach(d => {
+                for (let s = 1; s < 8; s++) {
+                    let nr = r + d[0]*s, nc = c + d[1]*s;
+                    if (nr < 0 || nr > 7 || nc < 0 || nc > 7) break;
+                    let ni = nr * 8 + nc;
+                    if (board[ni] === '.') moves.push(ni);
+                    else { if (isW !== (board[ni] === board[ni].toUpperCase())) moves.push(ni); break; }
+                    if (type === 'n' || type === 'k') break;
+                }
+            });
+        }
+        return moves;
+    }
+
+    function isKingInCheck(board, color) {
+        let kp = board.indexOf(color === 'white' ? 'K' : 'k');
+        if (kp === -1) return false;
+        for (let i = 0; i < 64; i++) {
+            let p = board[i];
+            if (p !== '.' && (color === 'white' ? p === p.toLowerCase() : p === p.toUpperCase())) {
+                if (getPseudoMoves(board, i).includes(kp)) return true;
+            }
+        }
+        return false;
+    }
+
+    function getLegalMoves(board, idx) {
+        let color = board[idx] === board[idx].toUpperCase() ? 'white' : 'black';
+        return getPseudoMoves(board, idx).filter(to => {
+            let temp = [...board]; temp[to] = temp[idx]; temp[idx] = '.';
+            return !isKingInCheck(temp, color);
+        });
+    }
+
+    function getAllLegalMoves(board, color) {
+        let all = [];
+        board.forEach((p, i) => {
+            if (p !== '.' && (color === 'white' ? p === p.toUpperCase() : p === p.toLowerCase())) {
+                getLegalMoves(board, i).forEach(t => all.push({f: i, t: t}));
+            }
+        });
+        return all;
+    }
+
+    function handleCellClick(i) {
+        if (!state.active || state.gameOver) return;
+        if (state.mode !== 'local' && state.turn !== state.role) return;
+        const p = state.board[i];
+        if (p !== '.' && (state.turn === 'white' ? p === p.toUpperCase() : p === p.toLowerCase())) {
+            selectedIdx = i; legalMoves = getLegalMoves(state.board, i); render();
+        } else if (selectedIdx !== null && legalMoves.includes(i)) {
+            makeMove(selectedIdx, i);
+        } else { selectedIdx = null; legalMoves = []; render(); }
+    }
+
+    function makeMove(f, t) {
+        state.board[t] = state.board[f]; state.board[f] = '.';
+        if (state.board[t] === 'P' && t < 8) state.board[t] = 'Q';
+        if (state.board[t] === 'p' && t > 55) state.board[t] = 'q';
+        state.turn = state.turn === 'white' ? 'black' : 'white';
+        selectedIdx = null; legalMoves = [];
+        if (state.id !== 'local') db.ref('chess/' + state.id).update({ board: state.board, turn: state.turn });
+        else render();
+    }
+
+    function botMove() {
+        let all = getAllLegalMoves(state.board, 'black');
+        if (all.length) {
+            all.sort((a,b) => (state.board[b.t] !== '.' ? 1 : 0) - (state.board[a.t] !== '.' ? 1 : 0));
+            makeMove(all[0].f, all[0].t);
+        }
+    }
+</script>
+</body>
+</html>
